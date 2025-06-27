@@ -17,13 +17,15 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+            install_targets: x86_64-unknown-linux-gnu
             use_zigbuild: true
           - os: macos-latest
             target: universal2-apple-darwin
-            additional_targets: "x86_64-apple-darwin,aarch64-apple-darwin"
+            install_targets: "x86_64-apple-darwin,aarch64-apple-darwin"
             use_zigbuild: true
           - os: windows-latest
             target: x86_64-pc-windows-msvc
+            install_targets: x86_64-pc-windows-msvc
             use_zigbuild: false
 
     steps:
@@ -33,7 +35,7 @@ jobs:
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
-        targets: ${{ matrix.target }}${{ matrix.additional_targets && format(',{0}', matrix.additional_targets) || '' }}
+        targets: ${{ matrix.install_targets }}
 
     - name: Install Zig (for zigbuild)
       if: matrix.use_zigbuild
@@ -117,23 +119,17 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact_name: cmprs-linux-x64
+            install_targets: "x86_64-unknown-linux-gnu"
             use_zigbuild: true
           - os: macos-latest
             target: universal2-apple-darwin
-            additional_targets: "x86_64-apple-darwin,aarch64-apple-darwin"
+            install_targets: "x86_64-apple-darwin,aarch64-apple-darwin"
             artifact_name: cmprs-macos-universal
-            use_zigbuild: true
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            artifact_name: cmprs-macos-x64
-            use_zigbuild: true
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            artifact_name: cmprs-macos-arm64
             use_zigbuild: true
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact_name: cmprs-windows-x64
+            install_targets: "x86_64-pc-windows-msvc"
             use_zigbuild: false
 
     steps:
@@ -143,7 +139,7 @@ jobs:
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
-        targets: ${{ matrix.target }}${{ matrix.additional_targets && format(',{0}', matrix.additional_targets) || '' }}
+        targets: ${{matrix.install_targets}}
 
     - name: Install Zig (for zigbuild)
       if: matrix.use_zigbuild
