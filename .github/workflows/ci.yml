@@ -145,11 +145,11 @@ jobs:
       if: matrix.use_zigbuild
       uses: goto-bus-stop/setup-zig@v2
       with:
-        version: 0.11.0
+        version: 0.14.1
 
     - name: Install cargo-zigbuild
       if: matrix.use_zigbuild
-      run: cargo install cargo-zigbuild
+      run: cargo install --locked cargo-zigbuild
 
     - name: Cache Rust dependencies
       uses: actions/cache@v4
