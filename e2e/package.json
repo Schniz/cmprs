@@ -1,0 +1,11 @@
+{
+  "name": "cmprs-e2e-tests",
+  "version": "1.0.0",
+  "description": "End-to-end tests for cmprs",
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "test:watch": "bun test --watch",
+    "test:coverage": "bun test --coverage"
+  }
+}

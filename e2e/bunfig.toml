@@ -1,0 +1,9 @@
+[test]
+# Run tests sequentially for e2e tests to avoid conflicts
+concurrency = 1
+
+# Timeout for long-running e2e tests (30 seconds)
+timeout = 30000
+
+# Show verbose output for debugging
+verbose = true
