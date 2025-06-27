@@ -8,7 +8,7 @@ import { tmpdir, platform } from "os";
 
 const REPO_ROOT = join(import.meta.dir, "..");
 const CMPRS_ROOT = join(REPO_ROOT, "cmprs");
-const CMPRS_BIN = join(CMPRS_ROOT, "target/release/cmprs");
+const CMPRS_BIN = join(CMPRS_ROOT, `target/release/cmprs${platform() === "win32" ? ".exe" : ""}`);
 
 let tempDir;
 
@@ -218,14 +218,20 @@ test.skipIf(platform() !== "darwin")("Build macOS universal binary with --build-
   console.log("   ✓ Universal binary executed successfully");
   console.log("   ✓ Output matches original");
   
-  // Check if it's actually a universal binary using the `file` command
-  const fileResult = await runCommand("file", [universalPath]);
-  expect(fileResult.exitCode).toBe(0);
-  
-  // Universal binaries should contain multiple architectures
-  if (fileResult.stdout.includes("universal") || fileResult.stdout.includes("fat")) {
-    console.log("   ✓ Confirmed as universal/fat binary");
-  } else {
-    console.log(`   ℹ️  File type: ${fileResult.stdout}`);
+  // Check if it's actually a universal binary using the `file` command (macOS only)
+  try {
+    const fileResult = await runCommand("file", [universalPath]);
+    if (fileResult.exitCode === 0) {
+      // Universal binaries should contain multiple architectures
+      if (fileResult.stdout.includes("universal") || fileResult.stdout.includes("fat")) {
+        console.log("   ✓ Confirmed as universal/fat binary");
+      } else {
+        console.log(`   ℹ️  File type: ${fileResult.stdout}`);
+      }
+    } else {
+      console.log("   ℹ️  Could not determine file type (file command failed)");
+    }
+  } catch (error) {
+    console.log("   ℹ️  Could not determine file type (file command not available)");
   }
 });

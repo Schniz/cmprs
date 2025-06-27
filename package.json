@@ -1,0 +1,17 @@
+{
+  "name": "cmprs",
+  "version": "1.0.0",
+  "description": "Self-extracting zstd compressed executables",
+  "type": "module",
+  "scripts": {
+    "build": "cargo build --release --manifest-path cmprs/Cargo.toml && cargo build --release --manifest-path dcmprs/Cargo.toml",
+    "test": "cd e2e && bun test"
+  },
+  "keywords": [
+    "compression",
+    "zstd",
+    "executable",
+    "rust"
+  ],
+  "license": "MIT"
+}

@@ -1,5 +1,7 @@
 # cmprs 🗜️
 
+[![CI](https://github.com/Schniz/cmprs/actions/workflows/ci.yml/badge.svg)](https://github.com/Schniz/cmprs/actions/workflows/ci.yml)
+
 > Self-extracting executable compression
 
 ## Why does this exist? 🤔
@@ -50,6 +52,23 @@ cargo build --release
 # The magic happens in target/release/
 ls target/release/{cmprs,dcmprs}
 ```
+
+## Testing 🧪
+
+```bash
+# Install Bun (required for e2e tests)
+curl -fsSL https://bun.sh/install | bash
+
+# Run e2e tests
+bun run test
+```
+
+The e2e tests include:
+- ✅ Basic compression and decompression
+- ✅ Argument passing to compressed binaries
+- ✅ File size verification
+- ✅ macOS universal binary support (macOS only)
+- ✅ Cross-platform compatibility (Linux, macOS, Windows)
 
 ## Technical Details 🤓
 
