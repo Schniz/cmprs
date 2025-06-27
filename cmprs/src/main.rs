@@ -3,6 +3,7 @@ use log::{debug, info, warn};
 use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::{self, Read, Write};
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
@@ -13,13 +14,22 @@ use zstd::stream::write::Encoder as ZstdEncoder;
 // Using a unique 16-byte sequence that's unlikely to appear in binaries
 const MAGIC_HEADER: &[u8; 16] = b"DCMPRS_DATA_HERE";
 
+#[cfg(not(windows))]
+const SUFFIX: &str = "cmprs";
+#[cfg(windows)]
+const SUFFIX: &str = "cmprs.exe";
+
 #[derive(Parser)]
 #[command(name = "cmprs")]
 #[command(about = "Creates self-extracting zstd compressed executables")]
 #[command(version)]
 struct Args {
-    #[arg(short, long, help = "Output file")]
-    output: String,
+    #[arg(
+        short,
+        long,
+        help = "Output file. If not specified, defaults to <input>.<suffix>"
+    )]
+    output: Option<PathBuf>,
 
     #[arg(help = "Input file")]
     input: PathBuf,
@@ -38,17 +48,31 @@ fn main() -> io::Result<()> {
     let start_time = Instant::now();
 
     let args = Args::parse();
+    let output_path = args
+        .output
+        .unwrap_or_else(|| PathBuf::from(format!("{}.{SUFFIX}", args.input.display())));
+
     info!(
         "Starting compression of {} to {}",
         args.input.display(),
-        args.output
+        output_path.display(),
     );
 
-    // Read input file
+    // Read input file and check permissions
     debug!("Reading input file: {}", args.input.display());
     let read_start = Instant::now();
     let mut input = Vec::new();
-    File::open(&args.input)?.read_to_end(&mut input)?;
+    let input_file = File::open(&args.input)?;
+    let input_metadata = input_file.metadata()?;
+    let input_permissions = input_metadata.permissions();
+    let is_executable = input_permissions.mode() & 0o111 != 0;
+    
+    if !is_executable {
+        warn!("Input file '{}' is not executable", args.input.display());
+    }
+    
+    let mut input_file = input_file;
+    input_file.read_to_end(&mut input)?;
     info!("Read {} bytes in {:?}", input.len(), read_start.elapsed());
 
     let input_len = input.len();
@@ -161,10 +185,10 @@ fn main() -> io::Result<()> {
 
     debug!(
         "Creating output file and writing dcmprs executable: {}",
-        args.output
+        output_path.display()
     );
     let write_start = Instant::now();
-    let mut output = File::create(&args.output)?;
+    let mut output = File::create(&output_path)?;
     output.write_all(dcmprs_data)?;
     output.write_all(MAGIC_HEADER)?;
     let dcmprs_write_time = write_start.elapsed();
@@ -194,6 +218,12 @@ fn main() -> io::Result<()> {
         compressed.len(),
         compress_write_time
     );
+
+    // Copy permissions from the original file to the compressed file
+    debug!("Copying permissions from input to output file");
+    let perm_start = Instant::now();
+    output.set_permissions(input_permissions)?;
+    info!("Set permissions in {:?}", perm_start.elapsed());
 
     let total_size = dcmprs_data.len() + MAGIC_HEADER.len() + sha256_hash.len() + compressed.len();
     let total_write_time = dcmprs_write_time + sha_write_time + compress_write_time;
