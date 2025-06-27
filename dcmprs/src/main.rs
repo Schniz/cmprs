@@ -10,7 +10,7 @@ use std::time::Instant;
 use tempfile::NamedTempFile;
 use zstd::stream::read::Decoder as ZstdDecoder;
 
-// Same magic header as in cmprs
+// Same magic header as in cmprs+boundary
 const MAGIC_HEADER: &[u8; 16] = b"DCMPRS_DATA_HERE";
 
 fn main() -> io::Result<()> {
@@ -44,7 +44,7 @@ fn main() -> io::Result<()> {
 
     let magic_pos = magic_pos.unwrap();
     info!("Found magic header at position {}", magic_pos);
-    let data_start = magic_pos + MAGIC_HEADER.len();
+    let data_start = magic_pos + MAGIC_HEADER.len() + 3;
 
     if data_start + 32 >= buffer.len() {
         warn!("No SHA256 hash or compressed data found after magic header");
@@ -54,6 +54,11 @@ fn main() -> io::Result<()> {
     debug!(
         "Data starts at position {} (after magic header + SHA256)",
         data_start + 32
+    );
+
+    debug!(
+        "shasum is {:x?}",
+        &buffer[magic_pos + MAGIC_HEADER.len()..data_start]
     );
 
     // Skip the SHA256 hash (32 bytes after magic header) and get compressed data
@@ -161,7 +166,9 @@ fn main() -> io::Result<()> {
 /// The format is: [dcmprs executable][MAGIC_HEADER][32-byte SHA256][zstd compressed data]
 /// Search from the beginning to find the FIRST occurrence
 fn find_magic_header(buffer: &[u8]) -> Option<usize> {
-    (0..buffer.len().saturating_sub(MAGIC_HEADER.len()))
-        .find(|&i| &buffer[i..i + MAGIC_HEADER.len()] == MAGIC_HEADER)
+    (0..buffer.len().saturating_sub(MAGIC_HEADER.len())).find(|&i| {
+        &buffer[i..i + MAGIC_HEADER.len()] == MAGIC_HEADER
+            && &buffer[i + MAGIC_HEADER.len()..i + MAGIC_HEADER.len() + 3] == b";;;"
+    })
 }
 

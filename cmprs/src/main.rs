@@ -66,11 +66,11 @@ fn main() -> io::Result<()> {
     let input_metadata = input_file.metadata()?;
     let input_permissions = input_metadata.permissions();
     let is_executable = input_permissions.mode() & 0o111 != 0;
-    
+
     if !is_executable {
         warn!("Input file '{}' is not executable", args.input.display());
     }
-    
+
     let mut input_file = input_file;
     input_file.read_to_end(&mut input)?;
     info!("Read {} bytes in {:?}", input.len(), read_start.elapsed());
@@ -191,10 +191,11 @@ fn main() -> io::Result<()> {
     let mut output = File::create(&output_path)?;
     output.write_all(dcmprs_data)?;
     output.write_all(MAGIC_HEADER)?;
+    output.write_all(b";;;")?;
     let dcmprs_write_time = write_start.elapsed();
     info!(
         "Wrote {} byte dcmprs executable + magic header in {:?}",
-        dcmprs_data.len() + MAGIC_HEADER.len(),
+        dcmprs_data.len() + MAGIC_HEADER.len() + 3,
         dcmprs_write_time
     );
 

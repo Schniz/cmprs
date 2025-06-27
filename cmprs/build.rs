@@ -12,14 +12,40 @@ fn main() {
         "dcmprs"
     };
 
-    let status = std::process::Command::new("cargo")
-        .current_dir("../dcmprs")
-        .args(["build", "--release"])
-        .status()
-        .expect("Failed to build dcmprs");
+    // Check if we should build universal binary on macOS
+    let build_universal = std::env::var("BUILD_UNIVERSAL").unwrap_or_default() == "1";
+    let is_macos = cfg!(target_os = "macos");
+
+    let status = if build_universal && is_macos {
+        // Use cargo zigbuild for universal binary on macOS
+        std::process::Command::new("cargo")
+            .current_dir("../dcmprs")
+            .args([
+                "zigbuild",
+                "--target",
+                "universal2-apple-darwin",
+                "--release",
+            ])
+            .status()
+            .expect("Failed to build dcmprs with zigbuild")
+    } else {
+        // Standard cargo build
+        std::process::Command::new("cargo")
+            .current_dir("../dcmprs")
+            .args(["build", "--release"])
+            .status()
+            .expect("Failed to build dcmprs")
+    };
     assert!(status.success());
 
-    // Try both target-specific and general release directories
+    // Try different target directories based on build type
+    let build_universal = std::env::var("BUILD_UNIVERSAL").unwrap_or_default() == "1";
+    let is_macos = cfg!(target_os = "macos");
+
+    let dcmprs_path_universal = Path::new("../dcmprs/target")
+        .join("universal2-apple-darwin")
+        .join("release")
+        .join(dcmprs_name);
     let dcmprs_path_specific = Path::new("../dcmprs/target")
         .join(&target)
         .join("release")
@@ -28,31 +54,22 @@ fn main() {
         .join("release")
         .join(dcmprs_name);
 
-    let dcmprs_path = if dcmprs_path_specific.exists() {
+    let dcmprs_path = if build_universal && is_macos && dcmprs_path_universal.exists() {
+        dcmprs_path_universal
+    } else if dcmprs_path_specific.exists() {
         dcmprs_path_specific
     } else if dcmprs_path_general.exists() {
         dcmprs_path_general
     } else {
-        panic!("dcmprs binary not found at {} or {}. Please run 'cargo build --package dcmprs --release' first.", 
-               dcmprs_path_specific.display(), dcmprs_path_general.display());
+        panic!("dcmprs binary not found at {}, {}, or {}. Please run 'cargo build --package dcmprs --release' first.", 
+               dcmprs_path_universal.display(), dcmprs_path_specific.display(), dcmprs_path_general.display());
     };
 
     let dest_path = Path::new(&out_dir).join("dcmprs");
-
-    // Check that dcmprs binary doesn't contain our magic header
-    let dcmprs_data = std::fs::read(&dcmprs_path).expect("Failed to read dcmprs binary");
-    let magic_header = b"DCMPRS_DATA_HERE";
-
-    if dcmprs_data
-        .windows(magic_header.len())
-        .any(|window| window == magic_header)
-    {
-        panic!("ERROR: dcmprs binary contains the magic header '{}'. This would break boundary detection. Please change the magic header to something else.", 
-               String::from_utf8_lossy(magic_header));
-    }
 
     std::fs::copy(&dcmprs_path, &dest_path).expect("Failed to copy dcmprs binary");
 
     println!("cargo:rerun-if-changed=../dcmprs/src/main.rs");
     println!("cargo:rerun-if-changed=../dcmprs/Cargo.toml");
+    println!("cargo:rerun-if-env-changed=BUILD_UNIVERSAL");
 }
