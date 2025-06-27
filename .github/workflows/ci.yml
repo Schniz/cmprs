@@ -17,10 +17,14 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+            use_zigbuild: true
           - os: macos-latest
-            target: x86_64-apple-darwin
+            target: universal2-apple-darwin
+            additional_targets: "x86_64-apple-darwin,aarch64-apple-darwin"
+            use_zigbuild: true
           - os: windows-latest
             target: x86_64-pc-windows-msvc
+            use_zigbuild: false
 
     steps:
     - name: Checkout code
@@ -29,7 +33,17 @@ jobs:
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
-        targets: ${{ matrix.target }}
+        targets: ${{ matrix.target }}${{ matrix.additional_targets && format(',{0}', matrix.additional_targets) || '' }}
+
+    - name: Install Zig (for zigbuild)
+      if: matrix.use_zigbuild
+      uses: goto-bus-stop/setup-zig@v2
+      with:
+        version: 0.11.0
+
+    - name: Install cargo-zigbuild
+      if: matrix.use_zigbuild
+      run: cargo install cargo-zigbuild
 
     - name: Cache Rust dependencies
       uses: actions/cache@v4
@@ -47,14 +61,16 @@ jobs:
       with:
         bun-version: latest
 
-    - name: Build cmprs (Release)
+    - name: Build cmprs (Release) - zigbuild
+      if: matrix.use_zigbuild
       run: |
         cd cmprs
-        cargo build --release --target ${{ matrix.target }}
+        cargo zigbuild --release --target ${{ matrix.target }}
 
-    - name: Build dcmprs (Release)
+    - name: Build cmprs (Release) - regular build
+      if: "!matrix.use_zigbuild"
       run: |
-        cd dcmprs
+        cd cmprs
         cargo build --release --target ${{ matrix.target }}
 
     - name: Copy binaries to expected locations (Unix)
@@ -101,15 +117,24 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact_name: cmprs-linux-x64
+            use_zigbuild: true
+          - os: macos-latest
+            target: universal2-apple-darwin
+            additional_targets: "x86_64-apple-darwin,aarch64-apple-darwin"
+            artifact_name: cmprs-macos-universal
+            use_zigbuild: true
           - os: macos-latest
             target: x86_64-apple-darwin
             artifact_name: cmprs-macos-x64
+            use_zigbuild: true
           - os: macos-latest
             target: aarch64-apple-darwin
             artifact_name: cmprs-macos-arm64
+            use_zigbuild: true
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact_name: cmprs-windows-x64
+            use_zigbuild: false
 
     steps:
     - name: Checkout code
@@ -118,7 +143,17 @@ jobs:
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
-        targets: ${{ matrix.target }}
+        targets: ${{ matrix.target }}${{ matrix.additional_targets && format(',{0}', matrix.additional_targets) || '' }}
+
+    - name: Install Zig (for zigbuild)
+      if: matrix.use_zigbuild
+      uses: goto-bus-stop/setup-zig@v2
+      with:
+        version: 0.11.0
+
+    - name: Install cargo-zigbuild
+      if: matrix.use_zigbuild
+      run: cargo install cargo-zigbuild
 
     - name: Cache Rust dependencies
       uses: actions/cache@v4
@@ -131,14 +166,16 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-${{ matrix.target }}-cargo-
 
-    - name: Build cmprs for release
+    - name: Build cmprs for release - zigbuild
+      if: matrix.use_zigbuild
       run: |
         cd cmprs
-        cargo build --release --target ${{ matrix.target }}
+        cargo zigbuild --release --target ${{ matrix.target }}
 
-    - name: Build dcmprs for release
+    - name: Build cmprs for release - regular build
+      if: "!matrix.use_zigbuild"
       run: |
-        cd dcmprs
+        cd cmprs
         cargo build --release --target ${{ matrix.target }}
 
     - name: Prepare release artifacts (Unix)
@@ -146,8 +183,7 @@ jobs:
       run: |
         mkdir -p release
         cp cmprs/target/${{ matrix.target }}/release/cmprs release/
-        cp dcmprs/target/${{ matrix.target }}/release/dcmprs release/
-        chmod +x release/cmprs release/dcmprs
+        chmod +x release/cmprs
         tar -czf ${{ matrix.artifact_name }}.tar.gz -C release .
 
     - name: Prepare release artifacts (Windows)
@@ -155,7 +191,6 @@ jobs:
       run: |
         mkdir release
         copy "cmprs/target/${{ matrix.target }}/release/cmprs.exe" "release/"
-        copy "dcmprs/target/${{ matrix.target }}/release/dcmprs.exe" "release/"
         Compress-Archive -Path release/* -DestinationPath ${{ matrix.artifact_name }}.zip
 
     - name: Upload release artifacts (Unix)
