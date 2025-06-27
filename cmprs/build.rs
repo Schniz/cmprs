@@ -13,12 +13,15 @@ fn main() {
     };
 
     // Check if we should build universal binary on macOS
-    let build_universal = std::env::var("BUILD_UNIVERSAL").unwrap_or_default() == "1";
     let is_macos = cfg!(target_os = "macos");
 
-    let status = if build_universal && is_macos {
+    let dist_dir = Path::new(&out_dir).join("compiled_dcmprs");
+    std::fs::create_dir_all(&dist_dir).expect("dist dir");
+
+    // build universal macos
+    if is_macos {
         // Use cargo zigbuild for universal binary on macOS
-        std::process::Command::new("cargo")
+        let status = std::process::Command::new("cargo")
             .current_dir("../dcmprs")
             .args([
                 "zigbuild",
@@ -27,25 +30,26 @@ fn main() {
                 "--release",
             ])
             .status()
-            .expect("Failed to build dcmprs with zigbuild")
-    } else {
-        // Standard cargo build
-        std::process::Command::new("cargo")
-            .current_dir("../dcmprs")
-            .args(["build", "--release"])
-            .status()
-            .expect("Failed to build dcmprs")
+            .expect("Failed to build dcmprs with zigbuild");
+        assert!(status.success());
+        let binary_path = Path::new("../dcmprs/target")
+            .join("universal2-apple-darwin")
+            .join("release")
+            .join(dcmprs_name);
+
+        let dest_path = dist_dir.join("macos_universal");
+        std::fs::copy(binary_path, &dest_path).expect("Failed to copy dcmprs binary");
     };
+
+    // Standard cargo build
+    let status = std::process::Command::new("cargo")
+        .current_dir("../dcmprs")
+        .args(["build", "--release"])
+        .status()
+        .expect("Failed to build dcmprs");
     assert!(status.success());
 
     // Try different target directories based on build type
-    let build_universal = std::env::var("BUILD_UNIVERSAL").unwrap_or_default() == "1";
-    let is_macos = cfg!(target_os = "macos");
-
-    let dcmprs_path_universal = Path::new("../dcmprs/target")
-        .join("universal2-apple-darwin")
-        .join("release")
-        .join(dcmprs_name);
     let dcmprs_path_specific = Path::new("../dcmprs/target")
         .join(&target)
         .join("release")
@@ -54,19 +58,16 @@ fn main() {
         .join("release")
         .join(dcmprs_name);
 
-    let dcmprs_path = if build_universal && is_macos && dcmprs_path_universal.exists() {
-        dcmprs_path_universal
-    } else if dcmprs_path_specific.exists() {
+    let dcmprs_path = if dcmprs_path_specific.exists() {
         dcmprs_path_specific
     } else if dcmprs_path_general.exists() {
         dcmprs_path_general
     } else {
-        panic!("dcmprs binary not found at {}, {}, or {}. Please run 'cargo build --package dcmprs --release' first.", 
-               dcmprs_path_universal.display(), dcmprs_path_specific.display(), dcmprs_path_general.display());
+        panic!("dcmprs binary not found at {}, or {}. Please run 'cargo build --package dcmprs --release' first.", 
+               dcmprs_path_specific.display(), dcmprs_path_general.display());
     };
 
-    let dest_path = Path::new(&out_dir).join("dcmprs");
-
+    let dest_path = dist_dir.join("main");
     std::fs::copy(&dcmprs_path, &dest_path).expect("Failed to copy dcmprs binary");
 
     println!("cargo:rerun-if-changed=../dcmprs/src/main.rs");

@@ -1,4 +1,5 @@
 use clap::Parser;
+use include_dir::{include_dir, Dir};
 use log::{debug, info, warn};
 use sha2::{Digest, Sha256};
 use std::fs::File;
@@ -9,6 +10,8 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Instant;
 use zstd::stream::write::Encoder as ZstdEncoder;
+
+static DIST_DIR: Dir = include_dir!("$OUT_DIR/compiled_dcmprs");
 
 // Custom magic header to mark the boundary between dcmprs executable and compressed data
 // Using a unique 16-byte sequence that's unlikely to appear in binaries
@@ -41,6 +44,14 @@ struct Args {
         help = "Compression level (1-22, higher = better compression but slower)"
     )]
     compression_level: i32,
+
+    #[arg(
+        long,
+        default_value = "false",
+        help = "Build universal macOS binary",
+        hide = cfg!(not(target_os = "macos")),
+    )]
+    build_universal_macos: bool,
 }
 
 fn main() -> io::Result<()> {
@@ -176,7 +187,15 @@ fn main() -> io::Result<()> {
     // Meanwhile, start writing the output file with dcmprs executable
     debug!("Loading embedded dcmprs executable");
     let embed_start = Instant::now();
-    let dcmprs_data = include_bytes!(concat!(env!("OUT_DIR"), "/dcmprs"));
+    let dcmprs_file = if args.build_universal_macos {
+        DIST_DIR.get_file("macos_universal").or_else(|| {
+            log::error!("Universal macOS binary not found, falling back to main dcmprs");
+            DIST_DIR.get_file("main")
+        })
+    } else {
+        DIST_DIR.get_file("main")
+    };
+    let dcmprs_data = dcmprs_file.unwrap().contents();
     info!(
         "Loaded {} byte dcmprs executable in {:?}",
         dcmprs_data.len(),
