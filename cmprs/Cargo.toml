@@ -1,0 +1,13 @@
+[package]
+name = "cmprs"
+version = "0.1.0"
+edition = "2021"
+build = "build.rs"
+
+[dependencies]
+zstd = "0.13"
+clap = { version = "4.0", features = ["derive"] }
+sha2 = "0.10"
+log = "0.4.27"
+env_logger = "0.11.8"
+hex = "0.4"

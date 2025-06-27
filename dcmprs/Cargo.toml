@@ -1,0 +1,11 @@
+[package]
+name = "dcmprs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+zstd = "0.13"
+tempfile = "3.0"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
