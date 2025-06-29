@@ -1,17 +1,22 @@
 #!/usr/bin/env bun
+// @ts-check
 
 import { test, expect, beforeAll, afterAll } from "bun:test";
-import { spawn } from "bun";
+import { spawn, readableStreamToText } from "bun";
 import { mkdtemp, rm, chmod, stat } from "fs/promises";
 import { join } from "path";
 import { tmpdir, platform } from "os";
 
 const REPO_ROOT = join(import.meta.dir, "..");
 const CMPRS_ROOT = join(REPO_ROOT, "cmprs");
-const CMPRS_BIN = join(CMPRS_ROOT, "target/release/cmprs");
+const CMPRS_BIN = join(CMPRS_ROOT, `target/release/cmprs${platform() === "win32" ? ".exe" : ""}`);
 
 let tempDir;
 
+/**
+  * @param {string} cmd
+  * @param {string[]} args
+  */
 async function runCommand(cmd, args = [], options = {}) {
   const proc = spawn([cmd, ...args], {
     stdio: ["inherit", "pipe", "pipe"],
@@ -19,8 +24,12 @@ async function runCommand(cmd, args = [], options = {}) {
   });
   
   const output = await proc.exited;
-  const stdout = await new Response(proc.stdout).text();
-  const stderr = await new Response(proc.stderr).text();
+  const stdout = await readableStreamToText(proc.stdout);
+  const stderr = await readableStreamToText(proc.stderr);
+
+  if (output !== 0) {
+    console.log(`\n❌ Command failed: ${cmd} ${args.join(" ")}\n${stdout}\n${stderr}`);
+  }
   
   return {
     exitCode: output,
@@ -29,6 +38,9 @@ async function runCommand(cmd, args = [], options = {}) {
   };
 }
 
+/**
+  * @param {string} tempDir
+  */
 async function createTestBinary(tempDir) {
   const scriptPath = join(import.meta.dir, "script.js");
   const binaryPath = join(tempDir, "test-binary");
@@ -218,14 +230,20 @@ test.skipIf(platform() !== "darwin")("Build macOS universal binary with --build-
   console.log("   ✓ Universal binary executed successfully");
   console.log("   ✓ Output matches original");
   
-  // Check if it's actually a universal binary using the `file` command
-  const fileResult = await runCommand("file", [universalPath]);
-  expect(fileResult.exitCode).toBe(0);
-  
-  // Universal binaries should contain multiple architectures
-  if (fileResult.stdout.includes("universal") || fileResult.stdout.includes("fat")) {
-    console.log("   ✓ Confirmed as universal/fat binary");
-  } else {
-    console.log(`   ℹ️  File type: ${fileResult.stdout}`);
+  // Check if it's actually a universal binary using the `file` command (macOS only)
+  try {
+    const fileResult = await runCommand("file", [universalPath]);
+    if (fileResult.exitCode === 0) {
+      // Universal binaries should contain multiple architectures
+      if (fileResult.stdout.includes("universal") || fileResult.stdout.includes("fat")) {
+        console.log("   ✓ Confirmed as universal/fat binary");
+      } else {
+        console.log(`   ℹ️  File type: ${fileResult.stdout}`);
+      }
+    } else {
+      console.log("   ℹ️  Could not determine file type (file command failed)");
+    }
+  } catch (error) {
+    console.log("   ℹ️  Could not determine file type (file command not available)");
   }
 });

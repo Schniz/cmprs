@@ -1,0 +1,206 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            install_targets: x86_64-unknown-linux-gnu
+            use_zigbuild: true
+          - os: macos-latest
+            target: universal2-apple-darwin
+            install_targets: "x86_64-apple-darwin,aarch64-apple-darwin"
+            use_zigbuild: true
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            install_targets: x86_64-pc-windows-msvc
+            use_zigbuild: false
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.install_targets }}
+
+    - name: Install Zig (for zigbuild)
+      if: matrix.use_zigbuild
+      uses: goto-bus-stop/setup-zig@v2
+      with:
+        version: 0.11.0
+
+    - name: Install cargo-zigbuild
+      if: matrix.use_zigbuild
+      run: cargo install cargo-zigbuild
+
+    - name: Cache Rust dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
+
+    - name: Install Bun
+      uses: oven-sh/setup-bun@v1
+      with:
+        bun-version: latest
+
+    - name: Build cmprs (Release) - zigbuild
+      if: matrix.use_zigbuild
+      run: |
+        cd cmprs
+        cargo zigbuild --release --target ${{ matrix.target }}
+
+    - name: Build cmprs (Release) - regular build
+      if: "!matrix.use_zigbuild"
+      run: |
+        cd cmprs
+        cargo build --release --target ${{ matrix.target }}
+
+    - name: Copy binaries to expected locations (Unix)
+      if: runner.os != 'Windows'
+      run: |
+        mkdir -p cmprs/target/release
+        cp cmprs/target/${{ matrix.target }}/release/cmprs cmprs/target/release/cmprs
+        chmod +x cmprs/target/release/cmprs
+
+    - name: Copy binaries to expected locations (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        mkdir -p cmprs/target/release
+        copy "cmprs/target/${{ matrix.target }}/release/cmprs.exe" "cmprs/target/release/cmprs.exe"
+
+    - name: Install e2e test dependencies
+      run: |
+        cd e2e
+        bun install
+
+    - name: Run e2e tests
+      run: |
+        cd e2e
+        bun test
+
+    - name: Upload test artifacts on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-artifacts-${{ matrix.os }}
+        path: |
+          e2e/test-results/
+          e2e/*.log
+        retention-days: 7
+
+  build-release:
+    name: Build Release Binaries
+    runs-on: ${{ matrix.os }}
+    needs: test
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: cmprs-linux-x64
+            install_targets: "x86_64-unknown-linux-gnu"
+            use_zigbuild: true
+          - os: macos-latest
+            target: universal2-apple-darwin
+            install_targets: "x86_64-apple-darwin,aarch64-apple-darwin"
+            artifact_name: cmprs-macos-universal
+            use_zigbuild: true
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: cmprs-windows-x64
+            install_targets: "x86_64-pc-windows-msvc"
+            use_zigbuild: false
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{matrix.install_targets}}
+
+    - name: Install Zig (for zigbuild)
+      if: matrix.use_zigbuild
+      uses: goto-bus-stop/setup-zig@v2
+      with:
+        version: 0.14.1
+
+    - name: Install cargo-zigbuild
+      if: matrix.use_zigbuild
+      run: cargo install --locked cargo-zigbuild
+
+    - name: Cache Rust dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ matrix.target }}-cargo-
+
+    - name: Build cmprs for release - zigbuild
+      if: matrix.use_zigbuild
+      run: |
+        cd cmprs
+        cargo zigbuild --release --target ${{ matrix.target }}
+
+    - name: Build cmprs for release - regular build
+      if: "!matrix.use_zigbuild"
+      run: |
+        cd cmprs
+        cargo build --release --target ${{ matrix.target }}
+
+    - name: Prepare release artifacts (Unix)
+      if: runner.os != 'Windows'
+      run: |
+        mkdir -p release
+        cp cmprs/target/${{ matrix.target }}/release/cmprs release/
+        chmod +x release/cmprs
+        tar -czf ${{ matrix.artifact_name }}.tar.gz -C release .
+
+    - name: Prepare release artifacts (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        mkdir release
+        copy "cmprs/target/${{ matrix.target }}/release/cmprs.exe" "release/"
+        Compress-Archive -Path release/* -DestinationPath ${{ matrix.artifact_name }}.zip
+
+    - name: Upload release artifacts (Unix)
+      if: runner.os != 'Windows'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.artifact_name }}
+        path: ${{ matrix.artifact_name }}.tar.gz
+        retention-days: 30
+
+    - name: Upload release artifacts (Windows)
+      if: runner.os == 'Windows'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.artifact_name }}
+        path: ${{ matrix.artifact_name }}.zip
+        retention-days: 30
