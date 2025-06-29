@@ -2,7 +2,9 @@ use log::{debug, info, warn};
 use std::env;
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Write};
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+#[cfg(unix)]
 use std::os::unix::process::CommandExt;
 use std::process::{self, Command};
 use std::thread;
@@ -86,10 +88,13 @@ fn main() -> io::Result<()> {
     temp_file.write_all(&decompressed_data)?;
 
     // Make sure the temp file is executable
-    let metadata = temp_file.as_file().metadata()?;
-    let mut permissions = metadata.permissions();
-    permissions.set_mode(0o755);
-    temp_file.as_file().set_permissions(permissions)?;
+    #[cfg(unix)]
+    {
+        let metadata = temp_file.as_file().metadata()?;
+        let mut permissions = metadata.permissions();
+        permissions.set_mode(0o755);
+        temp_file.as_file().set_permissions(permissions)?;
+    }
 
     let temp_path = temp_file.path().to_path_buf();
     info!(
@@ -148,18 +153,29 @@ fn main() -> io::Result<()> {
     let _ = replacement_handle.join();
 
     info!("Total dcmprs processing time: {:?}", start_time.elapsed());
-    info!("Executing decompressed program with exec()");
 
-    // Keep temp file alive until exec
+    // Keep temp file alive until execution
     let _temp_file_guard = temp_file;
 
-    // Replace current process with the decompressed executable
-    // This never returns if successful
-    let err = cmd.exec();
+    #[cfg(unix)]
+    {
+        info!("Executing decompressed program with exec()");
+        // Replace current process with the decompressed executable
+        // This never returns if successful
+        let err = cmd.exec();
+        // If we get here, exec failed
+        warn!("exec() failed: {}", err);
+        Err(err)
+    }
 
-    // If we get here, exec failed
-    warn!("exec() failed: {}", err);
-    Err(err)
+    #[cfg(not(unix))]
+    {
+        info!("Executing decompressed program with spawn()");
+        // On Windows, we can't use exec, so we spawn and exit
+        let mut child = cmd.spawn()?;
+        let exit_status = child.wait()?;
+        process::exit(exit_status.code().unwrap_or(1));
+    }
 }
 
 /// Look for our custom magic header
@@ -171,4 +187,3 @@ fn find_magic_header(buffer: &[u8]) -> Option<usize> {
             && &buffer[i + MAGIC_HEADER.len()..i + MAGIC_HEADER.len() + 3] == b";;;"
     })
 }
-
