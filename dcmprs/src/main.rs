@@ -1,11 +1,7 @@
 use log::{debug, info, warn};
 use std::env;
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::{self, Read, Write};
-#[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
-#[cfg(unix)]
-use std::os::unix::process::CommandExt;
 use std::process::{self, Command};
 use std::thread;
 use std::time::Instant;
@@ -90,6 +86,7 @@ fn main() -> io::Result<()> {
     // Make sure the temp file is executable
     #[cfg(unix)]
     {
+        use std::os::unix::fs::PermissionsExt;
         let metadata = temp_file.as_file().metadata()?;
         let mut permissions = metadata.permissions();
         permissions.set_mode(0o755);
@@ -115,20 +112,42 @@ fn main() -> io::Result<()> {
     debug!("Starting parallel file replacement thread");
     let replacement_handle = thread::spawn(move || {
         let replace_start = Instant::now();
-        // Write decompressed content directly to original file
-        if let Ok(mut output_file) = OpenOptions::new()
-            .write(true)
-            .truncate(true)
-            .open(&current_exe_clone)
-        {
-            let _ = output_file.write_all(&decompressed_data_clone);
-            let _ = output_file.sync_all();
-            debug!(
-                "File replacement completed in {:?}",
-                replace_start.elapsed()
-            );
-        } else {
-            warn!("Failed to open original file for replacement");
+        // Use atomic replacement to avoid "Text file busy" error on Linux
+        match NamedTempFile::new_in(
+            current_exe_clone
+                .parent()
+                .unwrap_or_else(|| std::path::Path::new(".")),
+        ) {
+            Ok(mut temp_file) => {
+                if let Err(e) = temp_file.write_all(&decompressed_data_clone) {
+                    warn!("Failed to write to temp file: {}", e);
+                    return;
+                }
+
+                // Set executable permissions on temp file
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    if let Ok(metadata) = temp_file.as_file().metadata() {
+                        let mut permissions = metadata.permissions();
+                        permissions.set_mode(0o755);
+                        let _ = temp_file.as_file().set_permissions(permissions);
+                    }
+                }
+
+                // Atomically replace the original file
+                if let Err(e) = temp_file.persist(&current_exe_clone) {
+                    warn!("Failed to replace original file: {}", e);
+                } else {
+                    debug!(
+                        "File replacement completed in {:?}",
+                        replace_start.elapsed()
+                    );
+                }
+            }
+            Err(e) => {
+                warn!("Failed to create temp file for replacement: {}", e);
+            }
         }
     });
 
@@ -159,6 +178,7 @@ fn main() -> io::Result<()> {
 
     #[cfg(unix)]
     {
+        use std::os::unix::process::CommandExt;
         info!("Executing decompressed program with exec()");
         // Replace current process with the decompressed executable
         // This never returns if successful
