@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
+// @ts-check
 
 import { test, expect, beforeAll, afterAll } from "bun:test";
-import { spawn } from "bun";
+import { spawn, readableStreamToText } from "bun";
 import { mkdtemp, rm, chmod, stat } from "fs/promises";
 import { join } from "path";
 import { tmpdir, platform } from "os";
@@ -12,6 +13,10 @@ const CMPRS_BIN = join(CMPRS_ROOT, `target/release/cmprs${platform() === "win32"
 
 let tempDir;
 
+/**
+  * @param {string} cmd
+  * @param {string[]} args
+  */
 async function runCommand(cmd, args = [], options = {}) {
   const proc = spawn([cmd, ...args], {
     stdio: ["inherit", "pipe", "pipe"],
@@ -19,8 +24,12 @@ async function runCommand(cmd, args = [], options = {}) {
   });
   
   const output = await proc.exited;
-  const stdout = await new Response(proc.stdout).text();
-  const stderr = await new Response(proc.stderr).text();
+  const stdout = await readableStreamToText(proc.stdout);
+  const stderr = await readableStreamToText(proc.stderr);
+
+  if (output !== 0) {
+    console.log(`\n❌ Command failed: ${cmd} ${args.join(" ")}\n${stdout}\n${stderr}`);
+  }
   
   return {
     exitCode: output,
@@ -29,6 +38,9 @@ async function runCommand(cmd, args = [], options = {}) {
   };
 }
 
+/**
+  * @param {string} tempDir
+  */
 async function createTestBinary(tempDir) {
   const scriptPath = join(import.meta.dir, "script.js");
   const binaryPath = join(tempDir, "test-binary");
